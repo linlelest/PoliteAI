@@ -1,6 +1,9 @@
 # PoliteAI — AI Politeness Evaluation Experimental Platform
 
 **PoliteAI** is a web-based AI politeness evaluation experimental platform that allows users to score outputs of various AI models across multiple dimensions, helping researchers collect data related to AI politeness.
+<img width="2862" height="1730" alt="image" src="https://github.com/user-attachments/assets/0605d087-ce52-4e61-8577-7e58cb38f7f0" />
+<img width="2862" height="1730" alt="" src="https://github.com/user-attachments/assets/d6f43d37-ef2c-40b5-af4d-02e037e02ce0" />
+<img width="2875" height="1721" alt="" src="https://github.com/user-attachments/assets/135cd2b6-107f-43e9-b976-6a4853116037" />
 
 ---
 
@@ -189,6 +192,9 @@ MIT
 **PoliteAI** 是一个基于 Web 的 AI 礼貌性评估实验平台，允许用户对多种 AI 模型的输出内容进行多维度评分，帮助研究者收集 AI 礼貌性相关数据。
 
 **PoliteAI** is a web-based AI politeness evaluation experiment platform that allows users to rate AI model outputs across multiple dimensions, helping researchers collect data on AI politeness.
+<img width="2862" height="1730" alt="image" src="https://github.com/user-attachments/assets/2c3e5f3b-df0a-481d-b85f-8a69012acccb" />
+<img width="2862" height="1730" alt="image" src="https://github.com/user-attachments/assets/6db728ed-355d-4f62-9d0e-09baa4b607a3" />
+<img width="2862" height="1730" alt="image" src="https://github.com/user-attachments/assets/f6ee3b43-993e-4974-a9c0-0c5385359ef4" />
 
 ---
 
