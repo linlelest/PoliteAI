@@ -1,0 +1,182 @@
+以下是为您定制的**完整软件开发规格说明书**。内容已严格按“宏观布局→微观组件→交互逻辑→数据流”的结构编写，所有技术选型已对齐2025-2026年Next.js生态最新实践，可直接交付给AI或开发团队进行工程级实现。
+
+---
+## 🏗️ 一、 技术栈与工程架构
+| 模块 | 技术选型 | 版本/依赖 | 选型说明 |
+|:---|:---|:---|:---|
+| **前端框架** | Next.js 15 (App Router) + React 19 | `react@19`, `next@15` | 支持Server Components、Server Actions，减少客户端JS体积 |
+| **样式系统** | Tailwind CSS + `clsx`/`tailwind-merge` | `tailwindcss@3.4+` | 原子化CSS，配合shadcn实现响应式与暗色模式 |
+| **UI组件库** | shadcn/ui (Radix UI底层) | 按需复制源码 | 无障碍(A11Y)原生支持，零运行时依赖，完全可控 |
+| **国际化** | `next-intl` | 路由级 `/[lang]/` | 静态编译字典，支持热切换、URL参数回退、SEO友好 |
+| **富文本/Markdown** | TipTap (`@tiptap/core`) + 扩展集 | `@tiptap/extension-markdown`, `@tiptap/starter-kit` | 所见即所得，支持实时Markdown预览、工具栏自定义、字数统计 |
+| **状态与表单** | `react-hook-form` + `zod` | `@hookform/resolvers` | 声明式校验，防抖提交，与Server Actions无缝对接 |
+| **数据库** | SQLite + Drizzle ORM | `drizzle-orm`, `better-sqlite3` | 单文件部署，零配置，类型安全，支持事务与行级操作 |
+| **缓存与防刷** | Redis (Upstash) | `@upstash/redis` | IP/设备指纹限流、会话草稿暂存、导出队列 |
+| **部署** | 私有服务器 | Nginx + PM2 / Docker Compose | 反向代理、HTTPS自动续签、进程守护、零停机更新 |
+
+---
+## 🗄️ 二、 数据库结构设计（SQLite）
+采用关系型设计，确保数据一致性与查询性能。所有表通过外键关联，启用`PRAGMA foreign_keys = ON`。
+
+| 表名 | 字段 | 类型/约束 | 说明 |
+|:---|:---|:---|:---|
+| `admin` | `id`, `username`, `password_hash`, `is_initialized`, `created_at` | PK, UNIQUE, NOT NULL | 管理员账号。`is_initialized=false`时强制跳转注册页 |
+| `ai_model` | `id`, `custom_name`, `is_active`, `created_at` | PK, UNIQUE | 用户端不显示名称，仅用于后台归类 |
+| `topic` | `id`, `ai_model_id`, `politeness_level`, `content_md`, `is_active`, `created_at` | PK, FK(ai_model), ENUM(1,2,3) | 存储AI输出内容（Markdown），用户随机抽取 |
+| `dimension` | `id`, `title_cn`, `title_en`, `desc_cn`, `desc_en`, `max_score`, `sort_order`, `is_active` | PK, DEFAULT 5 | 评分维度，支持双语与拖拽排序 |
+| `session` | `id`, `device_fingerprint`, `ip_hash`, `round_id`, `status`, `last_updated` | PK, UNIQUE(idx) | 匿名用户会话，记录当前轮次与草稿 |
+| `submission` | `id`, `session_id`, `topic_id`, `dimension_id`, `score`, `note_md`, `submitted_at` | PK, FK, UNIQUE(session,topic,dim) | 评分明细，`note_md`为提交后编辑区内容 |
+
+---
+## 📱 三、 用户端页面布局与功能清单（宏观→微观）
+
+### 1. 欢迎页 `/`
+- **宏观布局**：全屏居中容器。顶部右侧语言切换器，中部Hero区域，底部CTA按钮。
+- **微观组件**：
+  - `LanguageSwitcher`：🌐图标+下拉菜单(中/EN)。切换不刷新，保留当前路由参数。
+  - `HeroText`：`<h1>`实验主题标语，`<p>`隐私声明（≤2行，浅灰字）。
+  - `StartButton`：圆角大按钮。悬停`transform: translateY(-2px)`+阴影。点击触发路由跳转`/rules`。
+- **交互逻辑**：首次访问读取`navigator.language`自动匹配字典。按钮加载态禁用，防重复点击。
+
+### 2. 规则指引页 `/rules`
+- **宏观布局**：左右分栏（移动端堆叠）。左侧流程图，右侧评分卡片，底部固定操作栏。
+- **微观组件**：
+  - `StepFlow`：3步横向流程图（图标+短文本+进度连接线）。支持`framer-motion`自动轮播高亮。
+  - `CriteriaCards`：5个卡片并列/网格。鼠标悬停显示`Tooltip`解释维度含义。
+  - `CheckboxAgree`：`<label><input type="checkbox"/> 我已阅读并理解评分规则</label>`。
+  - `NextButton`：默认`disabled`+低透明度。勾选后启用。
+- **交互逻辑**：未勾选复选框时点击Next触发`toast.warning("请先确认已阅读规则")`。勾选状态写入`localStorage`防刷新丢失。
+
+### 3. 评分工作台 `/rate`
+- **宏观布局**：顶部进度条，中部内容卡片，下方评分网格，底部导航栏。
+- **微观组件**：
+  - `ProgressBar`：`1/15` 文本+渐变进度线。滚动至顶部固定。
+  - `AIOutputCard`：浅灰背景(`bg-gray-50`)，等宽字体(`font-mono`)渲染Markdown。支持折叠/展开长文本。
+  - `RatingGrid`：5行（对应5维度）。每行左侧维度标题+副标题，右侧5个可点击方块(`1~5`)。点击高亮当前值，悬停显示“极差/较差/一般/良好/优秀”。
+  - `DraftIndicator`：右下角半透明水印“草稿已自动保存”。
+  - `SubmitBtn`：未填满所有维度时`disabled`。点击后触发Server Action写入数据库，跳转`/submit`。
+- **交互逻辑**：
+  - 本地`IndexedDB`存储当前轮次草稿。断网时显示离线提示，重连后静默同步。
+  - 误触返回/刷新时，恢复原随机序列与已填分数，不中断流程。
+
+### 4. 提交反馈页 `/submit`
+- **宏观布局**：顶部感谢区，中部折叠编辑区，底部双按钮。
+- **微观组件**：
+  - `ThankYouBlock`：✅图标+“您的反馈已记录，感谢参与”+本轮贡献徽章。
+  - `ToggleEditor`：开关组件。打开后展开TipTap编辑器。
+  - `MarkdownEditor`：工具栏（加粗/斜体/列表/引用/分割线/撤销/重做/字数统计）。实时红字预警>`500`字。
+  - `ActionButtons`：`再参与一轮`（主色）/ `结束并查看报告`（次色）。
+- **交互逻辑**：点击“修改”需二次确认`ConfirmDialog`。编辑器内容同步至`submission.note_md`。提交成功后清空本地草稿，生成新`session_round_id`供下一轮使用。
+
+---
+## 🖥️ 四、 管理端页面布局与功能清单
+
+### 1. 认证与初始化 `/admin`
+- **首次访问逻辑**：查询`admin`表。若`count=0`，强制渲染`RegisterForm`（用户名+密码+确认）。提交后写入DB并`setIsInitialized(true)`，跳转登录。
+- **登录页**：标准表单。失败锁定15分钟（Redis记录）。登录成功签发HttpOnly Cookie。
+- **布局**：左侧固定侧边栏(`w-64`)，右侧主内容区(`flex-1`)。顶部面包屑+管理员头像下拉（退出/修改密码）。
+
+### 2. AI创建 `/admin/ai`
+- **布局**：顶部`新建AI`按钮，下方`AI列表`表格。
+- **列字段**：自定义名称、创建时间、状态(启用/归档)、操作(编辑/删除)。
+- **交互**：
+  - 新增：Modal弹窗，输入名称+保存。校验重名。
+  - 删除：需输入`确认`文字二次验证。软删除（标记`is_active=false`，不级联已评分数据）。
+
+### 3. 题目创建 `/admin/topics`
+- **布局**：卡片网格视图。每张卡片顶部状态Toggle，中部Markdown预览/编辑切换，底部选择器。
+- **组件**：
+  - `MDToolbar`：TipTap标准工具栏+`Preview`切换按钮。
+  - `AISelector`：下拉菜单，数据源`ai_model(is_active=true)`。
+  - `PolitenessBadge`：只读标签 `L1 / L2 / L3`（前端隐藏，仅管理员可见）。
+- **交互**：实时自动保存（防抖500ms）。支持批量导入/导出JSON。归档题目自动从用户随机池剔除。
+
+### 4. 评分维度 `/admin/dimensions`
+- **布局**：垂直列表。顶部`添加维度`按钮，列表项支持拖拽排序(`@dnd-kit`)。
+- **单行组件**：
+  - 双语言输入区（CN标题/描述，EN标题/描述，各占`<input>`与`<textarea>`）。
+  - 预览区：5个方块UI实时联动高亮。
+  - 操作：启用开关、拖拽手柄、删除。
+- **交互**：最多支持10个维度。保存后实时同步至用户端评分页。
+
+### 5. 数据统计 `/admin/stats`
+- **布局**：顶部汇总卡片 → 中部可展开树形报表 → 右侧/顶部导出工具栏。
+- **组件**：
+  - `SummaryCards`：总用户数、总提交轮次、最新活跃时间。
+  - `AccordionTree`：
+    - 一级：AI名称卡片（点击展开）
+    - 二级：L1/L2/L3卡片（横向排列，点击展开）
+    - 三级：维度列表（显示维度名+平均分`3.8/5`）
+    - 四级：维度展开后显示1-5星分布柱状图（`Recharts`渲染）
+  - `ExportBar`：`📄 导出PDF` / `🌐 导出网页` / `📦 导出JSON` 按钮组。
+- **交互**：展开项异步加载数据。默认折叠一级，防页面卡顿。
+
+---
+## 📊 五、 核心业务逻辑与数据流规范
+
+### 1. 随机分发引擎
+- **算法**：Fisher-Yates Shuffle + 约束采样。
+- **逻辑**：
+  1. 从`topic(is_active=true)`池中提取所有记录。
+  2. 按`ai_model_id`分组，确保每组取1个。
+  3. 按`politeness_level`分组，确保L1/L2/L3各3个。
+  4. 若池不足15条，返回`HTTP 503`并提示管理员补充。
+  5. 生成`round_id = uuid()`，写入Redis `EX 3600`（会话隔离）。
+- **恢复机制**：用户刷新时，读取`localStorage`中的`round_id`与已评分索引，从Redis恢复序列，不重新洗牌。
+
+### 2. 匿名与防刷
+- **指纹生成**：`canvas fingerprint + WebGL + timezone + localStorage随机盐` → SHA-256 → `device_fingerprint`。
+- **限流**：Redis记录 `rate:{ip}:{date}`，每日上限5轮。超限返回`429`。
+- **数据脱敏**：导出JSON/PDF时，`session_id`替换为`ANON_{hash}`，移除IP与指纹字段。
+
+### 3. 提交与状态机
+```mermaid
+graph LR
+A[进入评分页] --> B{本地检查草稿}
+B -->|有| C[加载评分进度]
+B -->|无| D[生成新round_id+随机序列]
+C --> E[用户打分]
+D --> E
+E --> F{维度全满?}
+F -->|否| G[禁用提交按钮]
+F -->|是| H[Server Action写入submission表]
+H --> I[Redis清空该round草稿]
+I --> J[跳转/submit页]
+```
+
+---
+## 📑 六、 报告导出模块规格（PDF/Web/JSON）
+
+### 1. 共享视图组件 `<ReportView>`
+- 采用React组件复用。接收`statsTree`数据。
+- 渲染顺序：封面页 → 实验说明 → 汇总指标 → AI→等级→维度→星级分布（与后台完全一致）。
+- 样式：使用Tailwind定义打印友好类（`@media print` 隐藏滚动条，强制分页`page-break-after`）。
+
+### 2. PDF导出 (`/api/export/pdf`)
+- **技术**：`@react-pdf/renderer` 将`<ReportView>`转为Blob。
+- **排版**：A4纵向，页眉页脚含Logo与生成时间。图表转为SVG内嵌。
+- **精度**：支持中文字体子集化（`NotoSansCJK`），防乱码。
+
+### 3. 网页导出 (`/api/export/web`)
+- **技术**：渲染`<ReportView>`为独立HTML+内联CSS，打包ZIP。
+- **特性**：无需依赖后端，浏览器直接打开可交互（保留展开/折叠JS）。
+
+### 4. JSON导出 (`/api/export/json`)
+```json
+{
+  "meta": { "exported_at": "ISO8601", "format_version": "2.0" },
+  "summary": { "total_users": 142, "total_submissions": 2130 },
+  "tree": [
+    {
+      "ai_name": "Model_A",
+      "levels": [
+        { "level": 1, "topics": 15, "avg_score_overall": 4.1 },
+        { "level": 2, "topics": 15, "avg_score_overall": 4.3 }
+      ]
+    }
+  ],
+  "dimension_distribution": [
+    { "dim_id": "d1", "title_en": "Readability", "counts": {"1":12, "2":45, "3":88, "4":320, "5":665} }
+  ]
+}
+```
